@@ -1,0 +1,25 @@
+replicaCount: 1
+image:
+  repository: enrichment-worker
+  tag: latest
+  pullPolicy: Never
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+redis:
+  host: redis
+  port: 6379
+queue:
+  key: "wazuh:alerts"
+cache:
+  ttlSeconds: 86400
+logLevel: INFO
+secretName: enrichment-secrets
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001

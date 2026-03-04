@@ -1,0 +1,6 @@
+apiVersion: v2
+name: enrichment-worker
+description: Wazuh IOC Enrichment Worker
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
