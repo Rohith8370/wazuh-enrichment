@@ -38,203 +38,345 @@ WSL2 / Linux Machine
 
 ---
 
-## Prerequisites
+## Getting Started
 
-### API Keys (all free tier)
-
-| Service | Register At | Free Limit |
-|---------|-------------|------------|
-| VirusTotal | https://www.virustotal.com/gui/join-us | 4 req/min, 500/day |
-| AbuseIPDB | https://www.abuseipdb.com/register | 1000 req/day |
-| AlienVault OTX | https://otx.alienvault.com | Unlimited (free account) |
-| Slack Webhook | https://api.slack.com/apps | Free |
-
-### Infrastructure
-
-- Linux machine (Ubuntu 22.04/24.04) or WSL2 on Windows
-- Minimum 4GB RAM, 10GB free disk
-- AWS EC2 running Wazuh Manager (Ubuntu 22.04)
-- EC2 key pair (.pem file)
-- Elastic IP on EC2 (recommended — prevents IP changes on restart)
+> Follow these steps **in order**. There are two parts — Part A sets up Wazuh on EC2, Part B sets up the enrichment pipeline on your local machine.
 
 ---
 
-## Installation
+### Before You Begin — Get Your API Keys
 
-### Stage 1 — Prepare System
+Register for all four free accounts before touching the terminal. Keep the keys in a notepad.
+
+| Service | Register At | Where to Find Your Key |
+|---------|-------------|------------------------|
+| VirusTotal | https://www.virustotal.com/gui/join-us | Profile → API Key |
+| AbuseIPDB | https://www.abuseipdb.com/register | Account → API |
+| AlienVault OTX | https://otx.alienvault.com | Settings → API Key |
+| Slack Webhook | https://api.slack.com/apps | Create App → Incoming Webhooks → Add Webhook |
+
+---
+
+## Part A — Set Up Wazuh on AWS EC2
+
+### Step 1 — Launch an EC2 Instance
+
+1. Go to the [AWS EC2 Console](https://console.aws.amazon.com/ec2)
+2. Click **Launch Instance** and configure:
+   - **Name:** `wazuh-manager`
+   - **AMI:** Ubuntu Server 22.04 LTS (64-bit x86)
+   - **Instance type:** `t2.medium` (minimum — Wazuh needs 2 vCPU, 4GB RAM)
+   - **Key pair:** Create new → download the `.pem` file and save it safely
+   - **Security group inbound rules:**
+
+     | Port | Protocol | Source | Purpose |
+     |------|----------|--------|---------|
+     | 22 | TCP | Your IP | SSH access |
+     | 1514 | TCP/UDP | Agent IPs | Wazuh agent communication |
+     | 1515 | TCP | Agent IPs | Wazuh agent registration |
+     | 443 | TCP | Your IP | Wazuh dashboard (optional) |
+
+3. Click **Launch Instance**
+4. Go to **Elastic IPs** → Allocate → Associate with this instance (prevents IP changes on restart)
+
+---
+
+### Step 2 — Install Wazuh Manager on EC2
+
+SSH into your instance:
 
 ```bash
-# Switch to non-root user
-su - YOUR_USERNAME
+chmod 400 ~/Downloads/your-key.pem
+ssh -i ~/Downloads/your-key.pem ubuntu@YOUR_EC2_ELASTIC_IP
+```
 
-# Update packages
+Once inside, run the Wazuh installation:
+
+```bash
+# Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install dependencies
+# Add Wazuh GPG key and repository
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo gpg --no-default-keyring \
+  --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && \
+  sudo chmod 644 /usr/share/keyrings/wazuh.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | \
+  sudo tee /etc/apt/sources.list.d/wazuh.list
+
+sudo apt update
+
+# Install Wazuh Manager
+sudo apt install -y wazuh-manager
+
+# Start and enable on boot
+sudo systemctl start wazuh-manager
+sudo systemctl enable wazuh-manager
+
+# Verify it is running
+sudo systemctl status wazuh-manager
+```
+
+Expected output:
+```
+Active: active (running) since ...
+```
+
+Check version:
+```bash
+sudo /var/ossec/bin/wazuh-control info | grep version
+# Expected: Wazuh v4.x.x
+```
+
+---
+
+### Step 3 — Install redis-cli on EC2
+
+Needed to verify the SSH tunnel later:
+
+```bash
+sudo apt install -y redis-tools
+```
+
+Exit the EC2 SSH session — the rest is done from your local machine:
+
+```bash
+exit
+```
+
+---
+
+## Part B — Set Up the Enrichment Pipeline (Local Machine / WSL2)
+
+### Step 4 — Install System Tools
+
+Open WSL2 (Windows) or your Ubuntu terminal:
+
+```bash
+# System update
+sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl wget git apt-transport-https ca-certificates gnupg lsb-release
-```
 
-### Stage 2 — Install Docker
-
-```bash
+# Docker
 curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh
-sudo usermod -aG docker $USER
-newgrp docker
+sudo usermod -aG docker $USER && newgrp docker
 
-# Verify
-docker run hello-world
-```
-
-### Stage 3 — Install k3s
-
-```bash
+# k3s (lightweight Kubernetes)
 curl -sfL https://get.k3s.io | sh -
-
-# Configure kubectl for non-root user
-mkdir -p ~/.kube && sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config && sudo chown $USER:$USER ~/.kube/config
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
 echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc && source ~/.bashrc
 
-# Verify
-kubectl get nodes   # Should show Ready
-```
-
-### Stage 4 — Install Helm
-
-```bash
+# Helm (Kubernetes package manager)
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-helm version
 ```
 
-### Stage 5 — Clone This Repository
+Verify everything is ready:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/wazuh-enrichment.git
+docker run hello-world      # Should print "Hello from Docker!"
+kubectl get nodes           # Should show STATUS = Ready
+helm version                # Should print version number
+```
+
+---
+
+### Step 5 — Clone the Repository
+
+```bash
+git clone https://github.com/Rohith8370/wazuh-enrichment.git
 cd wazuh-enrichment
 ```
 
-### Stage 6 — Configure Secrets
+You should see this structure:
+
+```
+wazuh-enrichment/
+├── .env.example          ← you will copy this
+├── enrichment-worker/    ← Python application
+├── wazuh-integration/    ← EC2 integration script
+└── helm/                 ← Kubernetes deployment charts
+```
+
+---
+
+### Step 6 — Configure Secrets
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in your real values:
+Replace every placeholder with your real values:
 
 ```env
-VIRUSTOTAL_API_KEY=your_real_key_here
-ABUSEIPDB_API_KEY=your_real_key_here
-OTX_API_KEY=your_real_key_here
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-SMTP_HOST=                    # Leave empty if not using email
+VIRUSTOTAL_API_KEY=paste_your_virustotal_key_here
+ABUSEIPDB_API_KEY=paste_your_abuseipdb_key_here
+OTX_API_KEY=paste_your_otx_key_here
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/REAL/WEBHOOK
+SMTP_HOST=                    # leave blank — email not required
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASSWORD=
 SMTP_FROM=
 SMTP_TO=
-TEAMS_WEBHOOK_URL=            # Leave empty if not using Teams
-REDIS_PASSWORD=               # Leave empty for no auth
+TEAMS_WEBHOOK_URL=            # leave blank — Teams not required
+REDIS_PASSWORD=               # leave blank — no auth needed
 LOG_LEVEL=INFO
 QUEUE_KEY=wazuh:alerts
 CACHE_TTL_SECONDS=86400
 ```
 
-Verify no placeholders remain:
+Confirm no placeholders remain:
+
 ```bash
-grep -c "your_" .env    # Must return 0
+grep "paste_" .env    # Must return nothing
 ```
 
-### Stage 7 — Build Container Image
+---
+
+### Step 7 — Build the Container Image
 
 ```bash
 cd enrichment-worker
+
+# Build the Docker image
 docker build -t enrichment-worker:latest .
+
+# Import into k3s (k3s uses its own image store, separate from Docker)
 docker save enrichment-worker:latest | sudo k3s ctr images import -
 
-# Verify
+# Confirm it loaded
 sudo k3s ctr images list | grep enrichment-worker
+
+cd ..    # back to project root
 ```
 
-### Stage 8 — Deploy to Kubernetes
+Expected output:
+```
+docker.io/library/enrichment-worker:latest    ...    42.8 MiB
+```
+
+---
+
+### Step 8 — Deploy to Kubernetes
 
 ```bash
-cd ..   # back to project root
-
-# Create namespace and secrets
+# Create the namespace
 kubectl create namespace enrichment
+
+# Load your secrets into Kubernetes
 kubectl create secret generic enrichment-secrets \
   --from-env-file=.env \
   --namespace=enrichment
 
-# Deploy Redis
+# Confirm 15 keys loaded
+kubectl describe secret enrichment-secrets -n enrichment | grep "Data"
+# Expected: Data == 15
+
+# Deploy Redis first
 helm install redis ./helm/charts/redis --namespace enrichment
 
-# Wait for Redis to be ready (1/1 Running)
-kubectl get pods -n enrichment
+# Wait until Redis shows 1/1 Running
+kubectl get pods -n enrichment -w
 
-# Deploy enrichment worker
+# Deploy the enrichment worker
 helm install enrichment-worker ./helm/charts/enrichment-worker --namespace enrichment
 
-# Verify both pods running
+# Confirm both pods are Running
 kubectl get pods -n enrichment
 ```
 
-### Stage 9 — Set Up SSH Tunnel (EC2 to Local Redis)
+Expected final output:
+```
+NAME                                        READY   STATUS    RESTARTS
+redis-0                                     1/1     Running   0
+enrichment-worker-xxxx-yyyy                 1/1     Running   0
+```
+
+Check the worker connected to Redis:
 
 ```bash
-# Copy your EC2 key
+kubectl logs -n enrichment -l app=enrichment-worker
+# Should contain: Connected to Redis at redis:6379
+```
+
+---
+
+### Step 9 — Set Up the SSH Tunnel (EC2 ↔ Local Redis)
+
+This connects your Wazuh EC2 instance to the Redis queue on your local machine.
+
+```bash
+# Place your EC2 key
 mkdir -p ~/.ssh
 cp /path/to/your-key.pem ~/.ssh/wazuh.pem
 chmod 600 ~/.ssh/wazuh.pem
 
 # Test SSH connection
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP "echo 'SSH works'"
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP "echo SSH is working"
 
-# Get Redis ClusterIP
+# Get the Redis ClusterIP
 kubectl get svc redis -n enrichment
-# Note the CLUSTER-IP value
+# Copy the CLUSTER-IP value (e.g. 10.43.131.89)
 
-# Start reverse SSH tunnel
+# Start the reverse tunnel (replace both placeholders with real values)
 ssh -i ~/.ssh/wazuh.pem \
   -o StrictHostKeyChecking=no \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
   -N -R 6379:REDIS_CLUSTER_IP:6379 \
-  ubuntu@YOUR_EC2_IP &
+  ubuntu@YOUR_EC2_ELASTIC_IP &
 
-# Verify tunnel works
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP \
+# Verify EC2 can reach Redis — should return PONG
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP \
   "redis-cli -h 127.0.0.1 -p 6379 ping"
-# Expected: PONG
+```
 
-# Save as alias for easy reuse
-echo "alias start-tunnel='pkill -f \"R 6379\" 2>/dev/null; sleep 1; ssh -i ~/.ssh/wazuh.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -N -R 6379:REDIS_CLUSTER_IP:6379 ubuntu@YOUR_EC2_IP &'" >> ~/.bashrc
+Save as a reusable alias so you only type it once:
+
+```bash
+echo "alias start-tunnel='pkill -f \"R 6379\" 2>/dev/null; sleep 1; \
+  ssh -i ~/.ssh/wazuh.pem \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -N -R 6379:REDIS_CLUSTER_IP:6379 \
+  ubuntu@YOUR_EC2_ELASTIC_IP &'" >> ~/.bashrc
+
 source ~/.bashrc
 ```
 
-### Stage 10 — Install Wazuh Integration on EC2
+From now on just type `start-tunnel` at the start of every session.
+
+---
+
+### Step 10 — Install the Wazuh Integration on EC2
+
+One-time setup. Run all commands from your **local machine**:
 
 ```bash
-# Install redis-py on EC2
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP \
+# Install the Python Redis library on EC2
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP \
   "sudo pip3 install redis --break-system-packages"
 
-# Copy integration script to EC2
+# Upload the integration script from your cloned repo
 scp -i ~/.ssh/wazuh.pem \
   wazuh-integration/custom-enrichment.py \
-  ubuntu@YOUR_EC2_IP:/tmp/custom-enrichment
+  ubuntu@YOUR_EC2_ELASTIC_IP:/tmp/custom-enrichment
 
-# Install with correct permissions
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP \
+# Install with permissions Wazuh requires
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP \
   "sudo cp /tmp/custom-enrichment /var/ossec/integrations/custom-enrichment && \
    sudo chmod 750 /var/ossec/integrations/custom-enrichment && \
    sudo chown root:wazuh /var/ossec/integrations/custom-enrichment"
 
-# Add integration to Wazuh config
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP "sudo python3 -c \"
+# Register the integration in Wazuh config
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP "sudo python3 -c \"
 conf = open('/var/ossec/etc/ossec.conf').read()
 block = '''  <integration>
-    <name>custom-enrichment</name>
+    <n>custom-enrichment</n>
     <hook_url>unused</hook_url>
     <level>3</level>
     <alert_format>json</alert_format>
@@ -242,51 +384,56 @@ block = '''  <integration>
 if 'custom-enrichment' not in conf:
     conf = conf.replace('</ossec_config>', block + '\n</ossec_config>')
     open('/var/ossec/etc/ossec.conf', 'w').write(conf)
-    print('Integration added')
+    print('Integration added successfully')
 else:
     print('Already configured')
 \""
 
-# Set environment variables on EC2
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP \
+# Set environment variables so the script can find Redis
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP \
   "sudo bash -c 'echo REDIS_HOST=127.0.0.1 >> /etc/environment && \
    echo REDIS_PORT=6379 >> /etc/environment && \
    echo QUEUE_KEY=wazuh:alerts >> /etc/environment'"
 
-# Restart Wazuh
-ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_IP \
-  "sudo systemctl restart wazuh-manager && \
-   sleep 5 && sudo systemctl status wazuh-manager | grep Active"
+# Restart Wazuh to activate the integration
+ssh -i ~/.ssh/wazuh.pem ubuntu@YOUR_EC2_ELASTIC_IP \
+  "sudo systemctl restart wazuh-manager && sleep 5 && \
+   sudo systemctl status wazuh-manager | grep Active"
+```
+
+Expected:
+```
+Active: active (running) since ...
 ```
 
 ---
 
-## Verification
+### Step 11 — Run the End-to-End Test
 
-### End-to-End Test
-
-Push a synthetic alert and watch it process:
+Push a synthetic alert to confirm the full pipeline works before waiting for a real one:
 
 ```bash
-# Push test alert
+# Push a test alert with a known malicious IP
 kubectl run redis-test --image=redis:7.2-alpine --restart=Never --rm -it \
   -n enrichment -- redis-cli -h redis -p 6379 RPUSH wazuh:alerts \
   '{"id":"test-001","rule":{"id":"5710","description":"SSH brute force","level":10,"groups":["syslog","sshd"]},"agent":{"id":"001","name":"test-host","ip":"10.0.0.5"},"data":{"srcip":"185.220.101.45"}}'
 
-# Watch logs
+# Watch the worker process it in real time
 kubectl logs -n enrichment -l app=enrichment-worker -f
 ```
 
-Expected output:
+Expected logs:
 ```
-INFO  worker.main - Processing alert_id=test-001
+INFO  worker.main - Processing alert_id=test-001 rule_id=5710
 INFO  extractor   - IOC extraction complete | ip_count: 1
 INFO  enricher    - Enriching ip: 185.220.101.45
 INFO  notifier    - Slack notification sent
 INFO  worker.main - AUDIT | risk=CRITICAL ioc_count=1 slack=True elapsed=0.34s
 ```
 
-Check your Slack channel — you should see a rich formatted message with verdicts from all three platforms.
+Check your Slack channel — a rich formatted alert card should arrive with verdicts from all three platforms.
+
+**If you see the above — setup is complete.** Every real Wazuh alert on EC2 will now be automatically enriched and delivered to Slack.
 
 ---
 
@@ -295,10 +442,12 @@ Check your Slack channel — you should see a rich formatted message with verdic
 ### Starting the Pipeline (every session)
 
 ```bash
-# 1. Start EC2 from AWS Console first
-# 2. Open terminal, then:
+# 1. Start EC2 from the AWS Console
+# 2. Open your terminal, then run:
 bash ~/wazuh_startup.sh
 ```
+
+This script handles Docker, k3s, pod health checks, and the SSH tunnel automatically.
 
 ### Quick Commands
 
@@ -395,24 +544,10 @@ wazuh-enrichment/
 | Problem | Fix |
 |---------|-----|
 | Worker CrashLoopBackOff | `kubectl logs -n enrichment <pod>` — check for missing env vars |
-| Slack not receiving | Verify webhook URL in secret |
-| Tunnel not working | Re-run `start-tunnel`, then test with `redis-cli ping` from EC2 |
+| Slack not receiving | Verify `SLACK_WEBHOOK_URL` in Kubernetes secret |
+| Tunnel not working | Re-run `start-tunnel`, then test from EC2: `redis-cli -h 127.0.0.1 ping` |
 | No alerts from Wazuh | Check `/var/ossec/logs/integrations.log` on EC2 |
-| API errors | Verify keys with a direct curl test to each API |
+| API errors | Test: `curl -H "x-apikey: YOUR_KEY" https://www.virustotal.com/api/v3/ip_addresses/8.8.8.8` |
+| Wazuh not starting | Run `sudo /var/ossec/bin/wazuh-control status` on EC2 |
 
 ---
-
-## Roadmap
-
-- [ ] Phase 2: AWS EKS migration (remove SSH tunnel, Redis on ElastiCache)
-- [ ] Gmail / SMTP notification support
-- [ ] Microsoft Teams Adaptive Cards
-- [ ] Grafana dashboard for alert metrics
-- [ ] Hash enrichment for malware families
-- [ ] MITRE ATT&CK mapping per alert
-
----
-
-## License
-
-Internal use only. Not for public distribution.
