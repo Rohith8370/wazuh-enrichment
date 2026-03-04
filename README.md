@@ -20,23 +20,7 @@ Every Wazuh security alert is automatically:
 
 ## Architecture
 
-```
-EC2 (Wazuh Manager)
-       |
-custom-enrichment.py
-       |
-  SSH Tunnel (reverse)
-       |
-WSL2 / Linux Machine
-       |
-  k3s Kubernetes Cluster
-  ├── Redis (queue + cache)
-  └── enrichment-worker (Python)
-             |
-        Slack Webhook
-```
-
----
+![Wazuh IOC Enrichment Pipeline - Architecture](assets/wazuh_architecture_animated.gif)
 
 ## Getting Started
 
