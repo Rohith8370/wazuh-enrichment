@@ -1,25 +1,57 @@
 replicaCount: 1
+
 image:
   repository: enrichment-worker
   tag: latest
   pullPolicy: Never
-resources:
-  requests:
-    cpu: "100m"
-    memory: "128Mi"
-  limits:
-    cpu: "500m"
-    memory: "512Mi"
+
+# Redis connection
 redis:
-  host: redis
-  port: 6379
+  host: "redis"
+  port: "6379"
+
+# Queue config
 queue:
   key: "wazuh:alerts"
+
+# Cache config
 cache:
-  ttlSeconds: 86400
-logLevel: INFO
+  ttlSeconds: "86400"
+
+# Logging
+logLevel: "INFO"
+
+# Metrics port
+metricsPort: "9090"
+
+# Secret name (created via kubectl create secret)
 secretName: enrichment-secrets
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1001
-  runAsGroup: 1001
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+
+livenessProbe:
+  exec:
+    command: ["python3", "-c", "import redis; r=redis.Redis(host='redis',port=6379,socket_connect_timeout=2); r.ping()"]
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  exec:
+    command: ["python3", "-c", "import redis; r=redis.Redis(host='redis',port=6379,socket_connect_timeout=2); r.ping()"]
+  initialDelaySeconds: 5
+  periodSeconds: 10

@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: "wazuh-enrichment"
+    environment: "production"
+
+scrape_configs:
+
+  # Enrichment worker metrics — scraped via SSH tunnel
+  # The worker exposes :9090/metrics, tunneled to EC2 localhost:9091
+  - job_name: "enrichment-worker"
+    static_configs:
+      - targets: ["localhost:9091"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Redis queue metrics via redis_exporter
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    scrape_interval: 15s
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Grafana self-monitoring
+  - job_name: "grafana"
+    static_configs:
+      - targets: ["grafana:3000"]

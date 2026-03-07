@@ -4,237 +4,271 @@ import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
 import requests
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
+
 from reporter import render_markdown, RISK_CRITICAL, RISK_HIGH, RISK_MEDIUM, RISK_LOW
 
 logger = logging.getLogger(__name__)
 
-SMTP_HOST     = os.getenv("SMTP_HOST", "")
-SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER     = os.getenv("SMTP_USER", "")
-SMTP_PASS     = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM     = os.getenv("SMTP_FROM", "wazuh@localhost")
-SMTP_TO       = [a.strip() for a in os.getenv("SMTP_TO", "").split(",") if a.strip()]
-TEAMS_WEBHOOK = os.getenv("TEAMS_WEBHOOK_URL", "")
-SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK_URL", "")
+SMTP_HOST      = os.getenv("SMTP_HOST", "")
+SMTP_PORT      = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER      = os.getenv("SMTP_USER", "")
+SMTP_PASS      = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM      = os.getenv("SMTP_FROM", "wazuh@localhost")
+SMTP_TO        = [a.strip() for a in os.getenv("SMTP_TO", "").split(",") if a.strip()]
+TEAMS_WEBHOOK  = os.getenv("TEAMS_WEBHOOK_URL", "")
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
+SLACK_CHANNEL  = os.getenv("SLACK_CHANNEL", "wazuh-alerts")
 
-_RISK_EMOJI = {
-    RISK_CRITICAL: ":red_circle:",
-    RISK_HIGH:     ":large_orange_circle:",
-    RISK_MEDIUM:   ":large_yellow_circle:",
-    RISK_LOW:      ":large_green_circle:",
-    "INFO":        ":white_circle:",
+_RISK_PRIORITY = {
+    RISK_CRITICAL: "P1 - CRITICAL",
+    RISK_HIGH:     "P2 - HIGH",
+    RISK_MEDIUM:   "P3 - MEDIUM",
+    RISK_LOW:      "P4 - LOW",
+    "INFO":        "P5 - INFO",
 }
 
 
 def _subject(report):
-    risk  = report["risk"]["overall"]
-    emoji = _RISK_EMOJI.get(risk, ":white_circle:")
-    rule  = report["alert"]["rule_name"]
-    host  = report["host"]["name"]
-    return "{} [{}] Wazuh: {} | {}".format(emoji, risk, rule, host)
-
-
-def _verdict_str(ioc):
-    mal_vt = False
-    mal_abuse = False
-    mal_otx = False
-    if "virustotal" in ioc:
-        try:
-            detected = int(ioc["virustotal"].get("detection_ratio", "0/0").split("/")[0])
-            mal_vt = detected > 0
-        except Exception:
-            pass
-    if "abuseipdb" in ioc:
-        mal_abuse = ioc["abuseipdb"].get("abuse_score", 0) >= 25
-    if "otx" in ioc:
-        mal_otx = ioc["otx"].get("pulse_count", 0) > 0
-    if mal_vt or mal_abuse or mal_otx:
-        return ":biohazard_sign: *MALICIOUS*"
-    return ":white_check_mark: *CLEAN / UNKNOWN*"
+    risk = report["risk"]["overall"]
+    rule = report["alert"]["rule_name"]
+    host = report["host"]["name"]
+    return "[{}] Wazuh: {} | {}".format(risk, rule, host)
 
 
 def _build_slack_blocks(report):
-    a    = report["alert"]
-    h    = report["host"]
-    net  = report["network"]
-    risk = report["risk"]
-    r    = risk["overall"]
-    emoji = _RISK_EMOJI.get(r, ":white_circle:")
+    a      = report["alert"]
+    h      = report["host"]
+    net    = report["network"]
+    risk   = report["risk"]
+    geo    = report.get("geoip", {})
+    mitre  = report.get("mitre", {})
+    r      = risk["overall"]
     blocks = []
 
+    # ── Header ──────────────────────────────────────────────────────
     blocks.append({
         "type": "header",
-        "text": {"type": "plain_text", "text": "WAZUH ALERT - {}".format(r), "emoji": True}
+        "text": {"type": "plain_text", "text": f"WAZUH SECURITY ALERT  |  {r}", "emoji": False}
     })
 
     blocks.append({"type": "divider"})
 
-    groups = ", ".join(a.get("groups", [])) or "N/A"
+    # ── Section 1: Alert Info ────────────────────────────────────────
     blocks.append({
         "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": (
-                "{} *{}*\n"
-                ":clipboard: *Rule:* {} _(ID: {})_\n"
-                ":warning: *Severity:* {} | *Groups:* {}\n"
-                ":computer: *Host:* `{}` | *Agent IP:* `{}`\n"
-                ":globe_with_meridians: *Source IP:* `{}` | *Dest IP:* `{}`"
-            ).format(
-                emoji, a["rule_name"],
-                a["rule_name"], a["rule_id"],
-                a["severity"], groups,
-                h["name"], h["ip"],
-                net["source_ip"] or "N/A",
-                net["dest_ip"] or "N/A",
-            )
-        }
+        "text": {"type": "mrkdwn", "text": "*ALERT INFORMATION*"}
     })
-
-    descriptions = {
-        "5710": "Multiple failed SSH login attempts detected. Indicates a brute force or credential stuffing attack targeting SSH service.",
-        "5712": "SSH login succeeded after multiple failures. Possible successful brute force compromise - investigate immediately.",
-        "5503": "User authentication failure. An account may be under attack.",
-        "31151": "Web attack detected. Possible SQL injection or XSS attempt against a web application.",
-        "1002": "Unknown system problem detected. Review full logs for additional context.",
-    }
-    rule_desc = descriptions.get(
-        str(a["rule_id"]),
-        "Security event detected by Wazuh. Review the alert details and enrichment results below for context."
-    )
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": ":mag: *What this alert means:*\n{}".format(rule_desc)}
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Severity*\n{a['severity']} — {_RISK_PRIORITY.get(r, r)}"},
+            {"type": "mrkdwn", "text": f"*Rule Description*\n{a['rule_name']}"},
+            {"type": "mrkdwn", "text": f"*Rule ID*\n{a['rule_id']}"},
+            {"type": "mrkdwn", "text": f"*Timestamp*\n{a['timestamp']}"},
+        ]
     })
 
-    if report["iocs"]:
-        blocks.append({"type": "divider"})
+    blocks.append({"type": "divider"})
+
+    # ── Section 2: Host Info ─────────────────────────────────────────
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*HOST INFORMATION*"}
+    })
+    blocks.append({
+        "type": "section",
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Hostname*\n{h['name']}"},
+            {"type": "mrkdwn", "text": f"*Agent ID*\n{h['id']}"},
+            {"type": "mrkdwn", "text": f"*Host IP*\n{h['ip']}"},
+            {"type": "mrkdwn", "text": f"*Username*\n{net.get('username', 'N/A')}"},
+        ]
+    })
+
+    blocks.append({"type": "divider"})
+
+    # ── Section 3: Network Info ──────────────────────────────────────
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*NETWORK INFORMATION*"}
+    })
+    blocks.append({
+        "type": "section",
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Source IP*\n{net.get('source_ip') or 'N/A'}"},
+            {"type": "mrkdwn", "text": f"*Destination IP*\n{net.get('dest_ip') or 'N/A'}"},
+        ]
+    })
+
+    blocks.append({"type": "divider"})
+
+    # ── Section 4: GeoIP ─────────────────────────────────────────────
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*GEOLOCATION*"}
+    })
+    blocks.append({
+        "type": "section",
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Country*\n{geo.get('country', 'N/A')}"},
+            {"type": "mrkdwn", "text": f"*City*\n{geo.get('city', 'N/A')}"},
+            {"type": "mrkdwn", "text": f"*ASN*\n{geo.get('asn', 'N/A')}"},
+            {"type": "mrkdwn", "text": f"*ISP / Organization*\n{geo.get('isp', 'N/A')}"},
+        ]
+    })
+
+    blocks.append({"type": "divider"})
+
+    # ── Section 5: Attack Context ────────────────────────────────────
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*ATTACK CONTEXT*"}
+    })
+    attack_tags = report.get("attack_tags", [])
+    tag_str     = ", ".join(attack_tags[:10]) if attack_tags else "N/A"
+    techniques  = mitre.get("techniques", [])
+    tactic      = mitre.get("tactic", [])
+    mitre_str   = "\n".join(techniques[:5]) if techniques else "N/A"
+    tactic_str  = ", ".join(tactic) if tactic else "N/A"
+    blocks.append({
+        "type": "section",
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Attack Tags*\n{tag_str}"},
+            {"type": "mrkdwn", "text": f"*MITRE Tactic*\n{tactic_str}"},
+            {"type": "mrkdwn", "text": f"*MITRE Technique*\n{mitre_str}"},
+            {"type": "mrkdwn", "text": f"*IOC Count*\n{risk.get('ioc_count', 0)}"},
+        ]
+    })
+
+    blocks.append({"type": "divider"})
+
+    # ── Section 6: Threat Intelligence ──────────────────────────────
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*THREAT INTELLIGENCE*"}
+    })
+
+    for ioc in report.get("iocs", []):
+        vt_score   = "N/A"
+        abuse_score = "N/A"
+        abuse_reports = "N/A"
+        otx_pulses = "N/A"
+
+        if "virustotal" in ioc:
+            vt = ioc["virustotal"]
+            vt_score = f"{vt.get('malicious_count', 0)} / {vt.get('total_engines', 0)} engines"
+
+        if "abuseipdb" in ioc:
+            ab = ioc["abuseipdb"]
+            abuse_score   = f"{ab.get('abuse_score', 0)} / 100"
+            abuse_reports = str(ab.get("total_reports", 0))
+
+        if "otx" in ioc:
+            otx_pulses = str(ioc["otx"].get("pulse_count", 0))
+
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": ":label: *IOC Enrichment Results*"}
+            "text": {"type": "mrkdwn", "text": f"*IOC:* `{ioc['type'].upper()}` — `{ioc['value']}`"}
         })
-
-        for ioc in report["iocs"]:
-            verdict = _verdict_str(ioc)
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*{} `{}`*\nOverall Verdict: {}".format(
-                        ioc["type"].upper(), ioc["value"], verdict
-                    )
-                }
-            })
-
-            if "virustotal" in ioc:
-                vt = ioc["virustotal"]
-                try:
-                    parts    = vt.get("detection_ratio", "0/0").split("/")
-                    detected = int(parts[0])
-                    total    = int(parts[1]) if len(parts) > 1 else 0
-                    vt_v     = ":biohazard_sign: MALICIOUS" if detected > 0 else ":white_check_mark: CLEAN"
-                except Exception:
-                    detected, total, vt_v = 0, 0, ":question: UNKNOWN"
-                families = vt.get("malware_families", [])
-                fam_str  = ", ".join(str(f) for f in families[:3]) if families else "None identified"
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": (
-                            ":vt: *VirusTotal*\n"
-                            ">Verdict: *{}*\n"
-                            ">Detection: *{}/{}* engines flagged this IOC\n"
-                            ">Malware Family: {}\n"
-                            ">First Seen: {} | Last Seen: {}"
-                        ).format(
-                            vt_v, detected, total, fam_str,
-                            vt.get("first_seen", "N/A"),
-                            vt.get("last_seen", "N/A"),
-                        )
-                    }
-                })
-
-            if "abuseipdb" in ioc:
-                ab    = ioc["abuseipdb"]
-                score = ab.get("abuse_score", 0)
-                ab_v  = ":biohazard_sign: MALICIOUS" if score >= 25 else ":white_check_mark: CLEAN"
-                tor   = ":warning: YES - TOR Exit Node" if ab.get("is_tor") else "No"
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": (
-                            ":shield: *AbuseIPDB*\n"
-                            ">Verdict: *{}*\n"
-                            ">Abuse Confidence Score: *{}/100*\n"
-                            ">Total Reports: {} | Last Reported: {}\n"
-                            ">Country: {} | ISP: {}\n"
-                            ">TOR Exit Node: {}"
-                        ).format(
-                            ab_v, score,
-                            ab.get("total_reports", 0),
-                            ab.get("last_reported", "N/A"),
-                            ab.get("country", "N/A"),
-                            ab.get("isp", "N/A"),
-                            tor,
-                        )
-                    }
-                })
-
-            if "otx" in ioc:
-                otx    = ioc["otx"]
-                pulses = otx.get("pulse_count", 0)
-                otx_v  = ":biohazard_sign: MALICIOUS" if pulses > 0 else ":white_check_mark: CLEAN"
-                fams   = otx.get("malware_families", [])
-                fam_str = ", ".join(fams[:3]) if fams else "None identified"
-                tags    = otx.get("tags", [])
-                tag_str = ", ".join(tags[:5]) if tags else "None"
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": (
-                            ":alien: *AlienVault OTX*\n"
-                            ">Verdict: *{}*\n"
-                            ">Threat Pulses: *{}* intelligence reports reference this IOC\n"
-                            ">Malware Family: {}\n"
-                            ">Tags: {}\n"
-                            ">Country: {} | First Seen: {}"
-                        ).format(
-                            otx_v, pulses, fam_str, tag_str,
-                            otx.get("country", "N/A"),
-                            otx.get("first_seen", "N/A"),
-                        )
-                    }
-                })
-
-            blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*VirusTotal Score*\n{vt_score}"},
+                {"type": "mrkdwn", "text": f"*AbuseIPDB Confidence*\n{abuse_score}"},
+                {"type": "mrkdwn", "text": f"*AbuseIPDB Reports*\n{abuse_reports}"},
+                {"type": "mrkdwn", "text": f"*AlienVault OTX Pulses*\n{otx_pulses}"},
+            ]
+        })
 
     blocks.append({
         "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": "{} *Risk: {}*\n:rotating_light: *Action:* {}".format(
-                emoji, r, risk["recommended_action"]
-            )
-        }
+        "fields": [
+            {"type": "mrkdwn", "text": f"*Threat Intelligence Verdict*\n{risk.get('verdict', 'N/A')}"},
+            {"type": "mrkdwn", "text": f"*Recommended Action*\n{risk.get('recommended_action', 'N/A')}"},
+        ]
     })
 
     blocks.append({"type": "divider"})
+
+    # ── Section 7: Log Evidence ──────────────────────────────────────
+    log_ev = report.get("log_evidence", "N/A")
+    if log_ev and log_ev != "N/A":
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*LOG EVIDENCE*"}
+        })
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"```{str(log_ev)[:500]}```"}
+        })
+        blocks.append({"type": "divider"})
+
+    # ── Section 8: Links ─────────────────────────────────────────────
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*INVESTIGATION LINKS*"}
+    })
+
+    intel_links = report.get("intel_links", [])
+    wazuh_link  = report.get("wazuh_link", "")
+    link_text   = ""
+    for lnk in intel_links[:6]:
+        link_text += f"{lnk}\n"
+    if wazuh_link:
+        link_text += f"Wazuh Dashboard: {wazuh_link}"
+
+    if link_text:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": link_text.strip()}
+        })
+
+    blocks.append({"type": "divider"})
+
+    # ── Footer ───────────────────────────────────────────────────────
     blocks.append({
         "type": "context",
         "elements": [{
             "type": "mrkdwn",
-            "text": ":lock: Wazuh Enrichment Pipeline | {} | ID: {} | Internal Use Only".format(
-                report["generated_at"][:19].replace("T", " "),
-                report["alert"]["id"]
-            )
+            "text": f"Wazuh Enrichment Pipeline  |  {report['generated_at'][:19].replace('T', ' ')} UTC  |  Alert ID: {a['id']}  |  Internal Use Only"
         }]
     })
 
     return blocks
+
+
+def send_slack(report):
+    if not SLACK_BOT_TOKEN:
+        logger.warning("Slack not configured - skipping")
+        return False, None
+    try:
+        client   = WebClient(token=SLACK_BOT_TOKEN)
+        blocks   = _build_slack_blocks(report)
+        risk     = report["risk"]["overall"]
+        fallback = "[{}] Wazuh: {} on {}".format(
+            risk, report["alert"]["rule_name"], report["host"]["name"]
+        )
+        response = client.chat_postMessage(
+            channel=SLACK_CHANNEL,
+            text=fallback,
+            blocks=blocks,
+        )
+        ts          = response["ts"]
+        channel_id  = response["channel"]
+        permalink_r = client.chat_getPermalink(channel=channel_id, message_ts=ts)
+        permalink   = permalink_r.get("permalink", "")
+        logger.info("Slack notification sent — permalink: %s", permalink)
+        return True, permalink
+    except SlackApiError as exc:
+        logger.error("Slack API error: %s", exc.response["error"])
+        return False, None
+    except Exception as exc:
+        logger.error("Slack error: %s", exc)
+        return False, None
 
 
 def send_email(report):
@@ -257,9 +291,7 @@ def send_email(report):
                 s.sendmail(SMTP_FROM, SMTP_TO, msg.as_string())
         else:
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
-                s.ehlo()
-                s.starttls(context=ctx)
-                s.ehlo()
+                s.ehlo(); s.starttls(context=ctx); s.ehlo()
                 if SMTP_USER:
                     s.login(SMTP_USER, SMTP_PASS)
                 s.sendmail(SMTP_FROM, SMTP_TO, msg.as_string())
@@ -274,33 +306,30 @@ def send_teams(report):
     if not TEAMS_WEBHOOK:
         logger.warning("Teams not configured - skipping")
         return False
-    risk  = report["risk"]["overall"]
-    emoji = _RISK_EMOJI.get(risk, ":white_circle:")
-    a     = report["alert"]
-    h     = report["host"]
-    net   = report["network"]
-    ri    = report["risk"]
+    a   = report["alert"]
+    h   = report["host"]
+    net = report["network"]
+    ri  = report["risk"]
+    r   = ri["overall"]
     color = {
         RISK_CRITICAL: "Attention", RISK_HIGH: "Attention",
         RISK_MEDIUM: "Warning", RISK_LOW: "Good", "INFO": "Default",
-    }.get(risk, "Default")
+    }.get(r, "Default")
     card = {
         "type": "message",
         "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": {
             "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
             "type": "AdaptiveCard", "version": "1.4",
             "body": [
-                {"type": "TextBlock", "text": "{} Wazuh Alert - {}".format(emoji, risk),
+                {"type": "TextBlock", "text": f"Wazuh Alert - {r}",
                  "size": "Large", "weight": "Bolder", "color": color},
                 {"type": "FactSet", "facts": [
-                    {"title": "Rule",      "value": "{} (ID: {})".format(a["rule_name"], a["rule_id"])},
+                    {"title": "Rule",      "value": f"{a['rule_name']} (ID: {a['rule_id']})"},
                     {"title": "Timestamp", "value": a["timestamp"]},
                     {"title": "Host",      "value": h["name"]},
                     {"title": "Source IP", "value": net["source_ip"] or "N/A"},
-                    {"title": "Dest IP",   "value": net["dest_ip"]   or "N/A"},
                 ]},
-                {"type": "TextBlock",
-                 "text": "{} - {}".format(risk, ri["recommended_action"]), "wrap": True},
+                {"type": "TextBlock", "text": ri["recommended_action"], "wrap": True},
             ]
         }}]
     }
@@ -314,34 +343,13 @@ def send_teams(report):
         return False
 
 
-def send_slack(report):
-    if not SLACK_WEBHOOK:
-        logger.warning("Slack not configured - skipping")
-        return False
-    try:
-        blocks   = _build_slack_blocks(report)
-        risk     = report["risk"]["overall"]
-        fallback = "[{}] Wazuh: {} on {}".format(
-            risk, report["alert"]["rule_name"], report["host"]["name"]
-        )
-        resp = requests.post(
-            SLACK_WEBHOOK,
-            json={"text": fallback, "blocks": blocks},
-            timeout=10
-        )
-        resp.raise_for_status()
-        logger.info("Slack notification sent")
-        return True
-    except Exception as exc:
-        logger.error("Slack error: %s", exc)
-        return False
-
-
 def deliver(report):
+    slack_ok, slack_permalink = send_slack(report)
     results = {
-        "email": send_email(report),
-        "teams": send_teams(report),
-        "slack": send_slack(report),
+        "email":           send_email(report),
+        "teams":           send_teams(report),
+        "slack":           slack_ok,
+        "slack_permalink": slack_permalink or "",
     }
     logger.info("Delivery results: %s", results)
     return results

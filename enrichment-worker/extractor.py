@@ -89,13 +89,14 @@ def _is_valid_domain(domain):
     return all(len(p) > 0 for p in parts)
 
 def extract(alert):
+    agent_ip = alert.get("agent", {}).get("ip", "")
     alert_id = alert.get("id", "unknown")
     logger.info("Starting IOC extraction for alert_id=%s", alert_id)
     text = _flatten_alert(alert)
     iocs = ExtractedIOCs()
 
     raw_ips = _RE_IPV4.findall(text)
-    iocs.ips = _dedupe([ip for ip in raw_ips if _is_public_ip(ip)])
+    iocs.ips = _dedupe([ip for ip in raw_ips if _is_public_ip(ip) and ip != agent_ip])
 
     remaining_text = text
     sha256_hits = _RE_SHA256.findall(remaining_text)

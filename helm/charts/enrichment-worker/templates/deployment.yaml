@@ -56,46 +56,84 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: OTX_API_KEY
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: SLACK_BOT_TOKEN
+                  optional: true
+            - name: SLACK_CHANNEL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: SLACK_CHANNEL
+                  optional: true
+            - name: JIRA_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: JIRA_URL
+                  optional: true
+            - name: JIRA_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: JIRA_EMAIL
+                  optional: true
+            - name: JIRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: JIRA_API_TOKEN
+                  optional: true
+            - name: JIRA_PROJECT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretName }}
+                  key: JIRA_PROJECT_KEY
+                  optional: true
             - name: SMTP_HOST
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: SMTP_HOST
+                  optional: true
             - name: SMTP_PORT
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: SMTP_PORT
+                  optional: true
             - name: SMTP_USER
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: SMTP_USER
+                  optional: true
             - name: SMTP_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: SMTP_PASSWORD
+                  optional: true
             - name: SMTP_FROM
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: SMTP_FROM
+                  optional: true
             - name: SMTP_TO
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: SMTP_TO
+                  optional: true
             - name: TEAMS_WEBHOOK_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secretName }}
                   key: TEAMS_WEBHOOK_URL
-            - name: SLACK_WEBHOOK_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secretName }}
-                  key: SLACK_WEBHOOK_URL
+                  optional: true
           resources:
             requests:
               cpu: "100m"

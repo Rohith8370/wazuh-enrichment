@@ -1,0 +1,65 @@
+# helm/charts/enrichment-worker/values.yaml (updated for metrics)
+# Changes from original:
+#   - Added metricsPort: 9090
+#   - Added metrics annotations for Prometheus scraping
+#   - Added METRICS_PORT env var
+
+replicaCount: 1
+
+image:
+  repository: enrichment-worker
+  tag: latest
+  pullPolicy: Never
+
+nameOverride: ""
+fullnameOverride: ""
+
+env:
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  QUEUE_KEY: "wazuh:alerts"
+  LOG_LEVEL: "INFO"
+  CACHE_TTL_SECONDS: "86400"
+  METRICS_PORT: "9090"
+
+secretName: enrichment-secrets
+
+service:
+  type: ClusterIP
+  port: 9090          # metrics port — scraped via SSH tunnel by Prometheus on EC2
+  targetPort: 9090
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 9090
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 9090
+  initialDelaySeconds: 5
+  periodSeconds: 10
