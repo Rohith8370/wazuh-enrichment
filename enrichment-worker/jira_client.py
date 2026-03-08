@@ -88,7 +88,7 @@ def create_ticket(report, slack_permalink=""):
     }
 
     try:
-        resp = requests.post(
+        resp = requests.get(
             f"{JIRA_URL}/rest/api/2/issue",
             json=payload,
             auth=HTTPBasicAuth(JIRA_EMAIL, JIRA_API_TOKEN),
@@ -104,3 +104,58 @@ def create_ticket(report, slack_permalink=""):
     except Exception as exc:
         logger.error("Jira error: %s", exc)
         return None
+
+
+# ── Jira Status Poller ────────────────────────────────────────────────────────
+
+import threading
+from metrics import set_gauge
+
+def _poll_jira_status():
+    """Poll Jira every 60s and update Prometheus gauges for ticket counts."""
+    import time
+    while True:
+        try:
+            resp = requests.get(
+                f"{JIRA_URL}/rest/api/3/search/jql",
+                auth=HTTPBasicAuth(JIRA_EMAIL, JIRA_API_TOKEN),
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+                params={
+                    "jql": f"project={JIRA_PROJECT_KEY}",
+                    "fields": "status",
+                    "maxResults": 1000,
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            issues = resp.json().get("issues", [])
+
+            counts = {"To Do": 0, "In Progress": 0, "Done": 0}
+            for issue in issues:
+                status = issue.get("fields", {}).get("status", {}).get("name", "")
+                if status in counts:
+                    counts[status] += 1
+
+            set_gauge("jira_tickets_total", counts["To Do"] + counts["In Progress"] + counts["Done"])
+            set_gauge("jira_tickets_todo",        counts["To Do"])
+            set_gauge("jira_tickets_in_progress",  counts["In Progress"])
+            set_gauge("jira_tickets_resolved",     counts["Done"])
+
+            logger.info(
+                "Jira poll: todo=%d in_progress=%d done=%d",
+                counts["To Do"], counts["In Progress"], counts["Done"]
+            )
+        except Exception as exc:
+            logger.warning("Jira poll error: %s", exc)
+
+        time.sleep(60)
+
+
+def start_jira_poller():
+    """Start the Jira status poller in a background thread."""
+    if not JIRA_URL or not JIRA_EMAIL or not JIRA_API_TOKEN:
+        logger.warning("Jira not configured — poller not started")
+        return
+    thread = threading.Thread(target=_poll_jira_status, daemon=True)
+    thread.start()
+    logger.info("Jira status poller started (60s interval)")

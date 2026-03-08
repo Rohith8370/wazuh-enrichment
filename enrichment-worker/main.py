@@ -14,7 +14,7 @@ from extractor    import extract
 from enricher     import enrich_all, _vt_query, _abuseipdb_query, _otx_query
 from reporter     import build_report
 from notifier     import deliver
-from jira_client  import create_ticket
+from jira_client  import create_ticket, start_jira_poller
 from cache        import get as cache_get, set as cache_set, exists as cache_exists
 from metrics      import init_metrics, inc, set_gauge, observe
 
@@ -190,6 +190,7 @@ def process_alert(alert: dict, r: redis.Redis):
 def main():
     log.info("Enrichment worker starting...")
     init_metrics(port=METRICS_PORT)
+    start_jira_poller()
 
     r = connect_redis()
     log.info(f"Listening on queue: {QUEUE_KEY}")
