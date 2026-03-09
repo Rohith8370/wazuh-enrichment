@@ -234,7 +234,7 @@ def _build_slack_blocks(report):
         "type": "context",
         "elements": [{
             "type": "mrkdwn",
-            "text": f"Wazuh Enrichment Pipeline  |  {report['generated_at'][:19].replace('T', ' ')} UTC  |  Alert ID: {a['id']}  |  Internal Use Only"
+            "text": f"{report['generated_at'][:19].replace('T', ' ')} UTC"
         }]
     })
 
@@ -256,6 +256,8 @@ def send_slack(report):
             channel=SLACK_CHANNEL,
             text=fallback,
             blocks=blocks,
+            unfurl_links=False,
+            unfurl_media=False,
         )
         ts          = response["ts"]
         channel_id  = response["channel"]

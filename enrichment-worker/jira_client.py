@@ -54,9 +54,6 @@ def create_ticket(alert, risk, slack_permalink=None):
             f"Agent: {agent.get('name')} ({agent.get('ip')})\n"
             f"Source IP: {data.get('srcip')}\n"
         )
-        if slack_permalink:
-            description_text += f"Slack: {slack_permalink}\n"
-
         payload = {
             "fields": {
                 "project":     {"key": JIRA_PROJECT_KEY},
@@ -66,7 +63,14 @@ def create_ticket(alert, risk, slack_permalink=None):
                     "content": [{
                         "type": "paragraph",
                         "content": [{"type": "text", "text": description_text}]
-                    }]
+                    }] + ([{
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": "Slack Alert: "},
+                            {"type": "text", "text": slack_permalink,
+                             "marks": [{"type": "link", "attrs": {"href": slack_permalink}}]}
+                        ]
+                    }] if slack_permalink else [])
                 },
                 "issuetype": {"name": "Task"},
                 "priority":  {"name": priority}
