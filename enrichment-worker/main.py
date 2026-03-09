@@ -14,7 +14,7 @@ from extractor    import extract
 from enricher     import enrich_all, _vt_query, _abuseipdb_query, _otx_query
 from reporter     import build_report
 from notifier     import deliver
-from jira_client  import create_ticket, start_jira_poller
+from jira_client  import create_ticket, start_status_poller
 from cache        import get as cache_get, set as cache_set, exists as cache_exists
 from metrics      import init_metrics, inc, set_gauge, observe
 
@@ -154,7 +154,7 @@ def process_alert(alert: dict, r: redis.Redis):
         report = build_report(alert, [])
         results = deliver(report)
         slack_permalink = results.get("slack_permalink", "")
-        create_ticket(report, slack_permalink)
+        create_ticket(alert, "INFO", slack_permalink)
         return
 
     # Enrich with per-provider latency tracking
@@ -171,7 +171,8 @@ def process_alert(alert: dict, r: redis.Redis):
     slack_permalink = results.get("slack_permalink", "")
 
     # Create Jira ticket
-    ticket = create_ticket(report, slack_permalink)
+    risk = report.get("risk", {}).get("overall", "INFO")
+    ticket = create_ticket(alert, risk, slack_permalink)
     if ticket:
         log.info(f"Jira ticket: {ticket['key']} — {ticket['url']}")
 
@@ -190,7 +191,7 @@ def process_alert(alert: dict, r: redis.Redis):
 def main():
     log.info("Enrichment worker starting...")
     init_metrics(port=METRICS_PORT)
-    start_jira_poller()
+    start_status_poller()
 
     r = connect_redis()
     log.info(f"Listening on queue: {QUEUE_KEY}")
