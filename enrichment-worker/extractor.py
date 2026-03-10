@@ -80,11 +80,33 @@ def _dedupe(lst):
             result.append(item)
     return result
 
-_SKIP_DOMAINS = {"localhost", "local", "internal", "corp", "lan"}
+_SKIP_DOMAINS = {
+    "localhost", "local", "internal", "corp", "lan",
+    # common file extensions mistaken for domains
+    "exe", "dll", "bat", "ps1", "sh", "py", "txt", "log", "cfg", "conf",
+    "zip", "tar", "gz", "rar", "pdf", "doc", "docx", "xls", "xlsx",
+    "locked", "enc", "crypt",
+    # common name suffixes mistaken for domains
+    "doe", "com", "admin", "user", "test", "example",
+}
+
+# Valid public TLDs - domain must end in one of these
+_VALID_TLDS = {
+    "com", "net", "org", "io", "gov", "edu", "mil",
+    "ru", "cn", "de", "uk", "fr", "jp", "br", "in", "au",
+    "co", "info", "biz", "me", "tv", "cc", "tk", "pw",
+    "xyz", "top", "site", "online", "tech", "live", "club",
+    "su", "to", "ws", "us", "ca", "eu", "nl", "pl", "es",
+}
 
 def _is_valid_domain(domain):
     parts = domain.lower().split(".")
-    if parts[-1] in _SKIP_DOMAINS or len(parts) < 2:
+    if len(parts) < 2:
+        return False
+    tld = parts[-1]
+    if tld not in _VALID_TLDS:
+        return False
+    if any(p in _SKIP_DOMAINS for p in parts):
         return False
     return all(len(p) > 0 for p in parts)
 
