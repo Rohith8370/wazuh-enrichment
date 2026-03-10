@@ -8,7 +8,8 @@ FROM python:3.12-slim AS runtime
 RUN groupadd --gid 1001 worker && useradd --uid 1001 --gid worker --shell /bin/false --no-create-home worker
 WORKDIR /app
 COPY --from=builder /install /usr/local
-COPY --chown=worker:worker . .
+COPY *.py ./
+RUN chown -R worker:worker /app
 USER worker
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import main, extractor, enricher, reporter, notifier, cache" || exit 1
