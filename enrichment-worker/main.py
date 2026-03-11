@@ -138,7 +138,29 @@ def process_alert(alert: dict, r: redis.Redis):
     rule     = alert.get("rule", {}).get("description", "")
     t_start  = time.time()
 
+    # Deduplicate — skip if already processed within 60s
+    dedup_key = f"dedup:{alert_id}"
+    if r.set(dedup_key, "1", nx=True, ex=60) is None:
+        log.info(f"Duplicate alert_id={alert_id} — skipping")
+        return
+
     log.info(f"Processing alert_id={alert_id} rule_id={rule_id} rule={rule}")
+
+    # Skip noisy low-value rules
+    SKIP_RULE_IDS = {
+        "100200",  # UFW Firewall activity
+        "502",     # Wazuh server started
+        "510",     # Rootcheck anomaly
+        "533",     # Listened ports changed
+        "5501",    # PAM login session opened
+        "5502",    # PAM login session closed
+        "2902",    # New dpkg package installed
+        "2904",    # Dpkg half configured
+    }
+    if rule_id in SKIP_RULE_IDS:
+        log.info(f"Skipping alert_id={alert_id} rule_id={rule_id} -- rule in skip list")
+        inc("enrichment_alerts_processed_total", labels={"risk_level": "INFO"})
+        return
 
     # Extract IOCs
     iocs = extract(alert)

@@ -46,13 +46,115 @@ def compute_overall_risk(enrichment_results):
         overall = _max_risk(overall, _score_result(r))
     return overall
 
-_RISK_ACTIONS = {
+_TACTIC_ACTIONS = {
+    "initial access": {
+        "phishing":          "Block sender domain, quarantine email, reset credentials for targeted user, enable MFA.",
+        "brute force":       "Block source IP, enforce account lockout policy, enable MFA on affected service.",
+        "exploit":           "Patch vulnerable service immediately, isolate affected host, review WAF rules.",
+        "default":           "Block source IP, review access logs, check for successful logins from this IP.",
+    },
+    "execution": {
+        "malware":           "Quarantine affected host, run full AV scan, check for persistence mechanisms in startup/registry.",
+        "ransomware":        "IMMEDIATELY isolate host from network, disable SMB shares, restore from clean backup, do not pay ransom.",
+        "script":            "Kill malicious process, review scheduled tasks and startup items, scan for lateral movement.",
+        "default":           "Isolate affected host, collect forensic image, review running processes and network connections.",
+    },
+    "credential access": {
+        "brute force":       "Block source IP at firewall, enforce strong password policy, enable MFA, check for successful logins.",
+        "credential dump":   "Reset all credentials on affected host, rotate service account passwords, check for golden ticket attacks.",
+        "default":           "Reset affected account credentials, enable MFA, review authentication logs for successful breaches.",
+    },
+    "lateral movement": {
+        "default":           "Isolate affected segment, review SMB/RDP/SSH connections, check for pass-the-hash or pass-the-ticket.",
+    },
+    "command and control": {
+        "dns":               "Block malicious domain at DNS level, check for DNS tunneling, review all hosts querying this domain.",
+        "default":           "Block C2 IP/domain at perimeter, isolate communicating host, review beaconing patterns.",
+    },
+    "impact": {
+        "ransomware":        "IMMEDIATELY isolate host, disable network shares, preserve encrypted files for recovery, restore from backup.",
+        "ddos":              "Enable rate limiting and traffic scrubbing, contact upstream ISP for null routing, activate DDoS mitigation.",
+        "default":           "Assess damage scope, isolate affected systems, begin incident response procedure.",
+    },
+    "collection": {
+        "default":           "Review data access logs, check for large data transfers, identify and contain affected accounts.",
+    },
+    "exfiltration": {
+        "default":           "Block outbound connections to suspicious IPs, review DLP alerts, identify data accessed and transferred.",
+    },
+    "discovery": {
+        "default":           "Block source IP, review what was accessed, check for subsequent exploitation attempts.",
+    },
+    "persistence": {
+        "default":           "Remove malicious startup entries, review scheduled tasks, reset compromised credentials, patch exploited vulnerability.",
+    },
+    "privilege escalation": {
+        "default":           "Revoke elevated privileges, patch exploited vulnerability, review sudo/admin group membership.",
+    },
+    "defense evasion": {
+        "default":           "Review log integrity, check for disabled security tools, restore security controls, investigate scope.",
+    },
+}
+
+_RISK_ACTIONS_DEFAULT = {
     RISK_CRITICAL: "IMMEDIATE ACTION: Block all associated IPs/domains, isolate affected host, escalate to IR team.",
     RISK_HIGH:     "Block associated IPs/domains at perimeter, investigate affected host, notify security lead.",
     RISK_MEDIUM:   "Monitor traffic, review host logs, consider temporary block.",
     RISK_LOW:      "Log and monitor. No immediate action required.",
     RISK_INFO:     "Informational. No enrichment data. Manual review recommended.",
 }
+
+# Rule description keyword -> recommendation (checked first, most specific)
+_DESCRIPTION_ACTIONS = {
+    "sql injection":       "Block source IP at WAF, review database query logs, check for data exfiltration, sanitize and patch vulnerable input fields.",
+    "xss":                 "Implement Content Security Policy headers, sanitize input fields, invalidate affected user sessions, check for stolen cookies.",
+    "cross-site scripting":"Implement Content Security Policy headers, sanitize input fields, invalidate affected user sessions, check for stolen cookies.",
+    "path traversal":      "Block source IP, restrict directory traversal at web server, audit file access logs, patch vulnerable application.",
+    "url interpretation":  "Block source IP, restrict directory traversal at web server, audit file access logs, patch vulnerable application.",
+    "dns spoofing":        "Flush DNS cache on all affected hosts, block spoofed DNS responses, verify DNS server integrity, enable DNSSEC.",
+    "dns poison":          "Flush DNS cache on all affected hosts, block spoofed DNS responses, verify DNS server integrity, enable DNSSEC.",
+    "session hijacking":   "Invalidate all active sessions, force re-authentication for all users, rotate session tokens, block source IP.",
+    "cookie theft":        "Invalidate all active sessions, force re-authentication for all users, rotate session tokens, set HttpOnly and Secure cookie flags.",
+    "brute force":         "Block source IP at firewall, enforce account lockout policy, enable MFA, review successful logins from this IP.",
+    "ssh brute":           "Block source IP at firewall, enforce account lockout policy, enable MFA on SSH, consider key-based auth only.",
+    "phishing":            "Block sender domain, quarantine email, reset credentials for targeted user, enable MFA.",
+    "spear phishing":      "Block sender domain, quarantine email, reset credentials for targeted executive, escalate to security team.",
+    "ransomware":          "IMMEDIATELY isolate host from network, disable SMB shares, preserve encrypted files, restore from clean backup - do not pay ransom.",
+    "mass file encryption":"IMMEDIATELY isolate host from network, disable SMB shares, preserve encrypted files, restore from clean backup - do not pay ransom.",
+    "ddos":                "Enable rate limiting and traffic scrubbing, contact upstream ISP for null routing, activate DDoS mitigation service.",
+    "syn flood":           "Enable SYN cookies, apply rate limiting at firewall, contact ISP for upstream filtering.",
+    "malware":             "Quarantine affected host, run full AV scan, check for persistence mechanisms in startup and registry.",
+    "c2":                  "Block C2 IP/domain at perimeter, isolate communicating host, review all beaconing connections.",
+    "lateral movement":    "Isolate affected network segment, review SMB/RDP/SSH connections, check for pass-the-hash attacks.",
+    "privilege escalation":"Revoke elevated privileges immediately, patch exploited vulnerability, review sudo and admin group membership.",
+    "data exfiltration":   "Block outbound connections to suspicious IPs, review DLP alerts, identify and contain exfiltrated data scope.",
+}
+
+def _get_recommendation(alert, overall):
+    """Generate context-aware recommendation based on rule description, groups and MITRE tactic."""
+    rule        = alert.get("rule", {})
+    description = rule.get("description", "").lower()
+    groups      = [g.lower() for g in rule.get("groups", [])]
+    mitre       = rule.get("mitre", {})
+    tactic      = (mitre.get("tactic") or [""])[0].lower() if mitre.get("tactic") else ""
+
+    # 1. Match by rule description keywords (most specific)
+    for keyword, action in _DESCRIPTION_ACTIONS.items():
+        if keyword in description:
+            return action
+
+    # 2. Match by group keywords
+    for keyword, action in _DESCRIPTION_ACTIONS.items():
+        if any(keyword in g for g in groups):
+            return action
+
+    # 3. Match by tactic
+    tactic_map = _TACTIC_ACTIONS.get(tactic, {})
+    if "default" in tactic_map:
+        return tactic_map["default"]
+
+    # 4. Final fallback to risk-level default
+    return _RISK_ACTIONS_DEFAULT.get(overall, _RISK_ACTIONS_DEFAULT[RISK_INFO])
 
 def _fmt_ts(ts):
     if ts is None: return "N/A"
@@ -253,7 +355,7 @@ def build_report(alert, enrichment_results):
         "mitre":   mitre,
         "risk": {
             "overall":            overall,
-            "recommended_action": _RISK_ACTIONS[overall],
+            "recommended_action": _get_recommendation(alert, overall),
             "ioc_count":          len(enrichment_results),
             "verdict":            verdict,
         },

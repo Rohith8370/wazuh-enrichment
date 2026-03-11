@@ -31,12 +31,13 @@ PRIORITY_MAP = {
     "LOW":      "Low"
 }
 
-SKIP_RULES = {"5501", "5502"}
-
+# Rules that always create a Jira ticket regardless of risk level
+ALWAYS_TICKET_RULES = {"5715"}  # SSH authentication success
 
 def create_ticket(alert, risk, slack_permalink=None):
-    if risk == "INFO" or alert.get("rule", {}).get("id") in SKIP_RULES:
-        logger.info("Jira ticket skipped — risk=%s or session logout alert", risk)
+    rule_id = alert.get("rule", {}).get("id", "")
+    if risk == "INFO" and rule_id not in ALWAYS_TICKET_RULES:
+        logger.info("Jira ticket skipped — risk=%s rule_id=%s", risk, rule_id)
         return None
 
     try:
