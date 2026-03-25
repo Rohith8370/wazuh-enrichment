@@ -20,7 +20,7 @@ Every Wazuh security alert is automatically:
 
 ## Architecture
 
-![Wazuh IOC Enrichment Pipeline - Architecture](assets/wazuh_architecture_animated.gif)
+![Wazuh IOC Enrichment Pipeline - Architecture](wazuh-architecture.drawio.png)
 
 ## Getting Started
 
