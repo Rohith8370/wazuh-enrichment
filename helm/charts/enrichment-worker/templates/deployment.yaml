@@ -134,6 +134,10 @@ spec:
                   name: {{ .Values.secretName }}
                   key: TEAMS_WEBHOOK_URL
                   optional: true
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           resources:
             requests:
               cpu: "100m"

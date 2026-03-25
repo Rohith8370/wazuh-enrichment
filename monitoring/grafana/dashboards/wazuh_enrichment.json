@@ -3,792 +3,391 @@
   "uid": "wazuh-enrichment-v1",
   "title": "Wazuh IOC Enrichment Pipeline",
   "description": "Real-time monitoring of the Wazuh IOC enrichment pipeline",
-  "tags": [
-    "wazuh",
-    "security",
-    "enrichment"
-  ],
+  "tags": ["wazuh", "security", "enrichment", "soc"],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 3,
   "refresh": "15s",
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "time": { "from": "now-1h", "to": "now" },
+  "style": "light",
   "panels": [
+
     {
-      "id": 1,
-      "title": "Alerts Processed / min",
-      "description": "Rate of alerts successfully processed by the enrichment worker",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "gradientMode": "opacity"
-          },
-          "unit": "short",
-          "displayName": "${__series.name}"
-        }
-      },
+      "id": 100, "type": "text", "title": "", "gridPos": {"x":0,"y":0,"w":24,"h":2},
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "expr": "sum by (risk_level) (rate(enrichment_alerts_processed_total[1m])) * 60",
-          "legendFormat": "{{risk_level}}",
-          "refId": "A"
-        }
-      ]
+        "mode": "html",
+        "content": "<div style=\"background:#fff;border:0.5px solid #e0e0e0;border-top:3px solid #1976d2;border-radius:6px;padding:14px 20px;display:flex;align-items:center;justify-content:space-between\"><div style=\"display:flex;align-items:center;gap:16px\"><div style=\"width:36px;height:36px;background:#e3f2fd;border-radius:50%;display:flex;align-items:center;justify-content:center\"><svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='#1976d2' stroke-width='2'><path d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/></svg></div><div><div style=\"font-size:15px;font-weight:600;color:#1a1a1a;letter-spacing:0.3px\">Wazuh IOC Enrichment Pipeline</div><div style=\"font-size:12px;color:#888;margin-top:1px\">Real-time threat detection &amp; IOC enrichment monitoring</div></div></div><div style=\"display:flex;align-items:center;gap:6px\"><div style=\"width:8px;height:8px;background:#388e3c;border-radius:50%;\"></div><span style=\"font-size:12px;color:#388e3c;font-weight:500\">LIVE</span></div></div>"
+      }
     },
+
     {
-      "id": 2,
-      "title": "Risk Level Breakdown",
-      "description": "Total alerts processed by risk level",
-      "type": "piechart",
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "id": 1, "title": "Total Processed", "type": "stat",
+      "gridPos": {"x":0,"y":2,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "color": {"mode":"fixed","fixedColor":"#1976d2"},
+          "thresholds": {"mode":"absolute","steps":[{"color":"#1976d2","value":null}]}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"area","textMode":"auto","orientation":"auto"},
+      "targets": [{"expr":"sum(enrichment_alerts_processed_total)","legendFormat":"Total","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 2, "title": "CRITICAL (last 1h)", "type": "stat",
+      "gridPos": {"x":4,"y":2,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode":"absolute","steps":[{"color":"#388e3c","value":null},{"color":"#d32f2f","value":1}]},
+          "color": {"mode":"thresholds"}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["sum"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"increase(enrichment_alerts_processed_total{risk_level=\"CRITICAL\"}[1h])","legendFormat":"CRITICAL","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 3, "title": "HIGH (last 1h)", "type": "stat",
+      "gridPos": {"x":8,"y":2,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode":"absolute","steps":[{"color":"#388e3c","value":null},{"color":"#f57c00","value":1}]},
+          "color": {"mode":"thresholds"}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["sum"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"increase(enrichment_alerts_processed_total{risk_level=\"HIGH\"}[1h])","legendFormat":"HIGH","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 4, "title": "Failed (DLQ)", "type": "stat",
+      "gridPos": {"x":12,"y":2,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode":"absolute","steps":[{"color":"#388e3c","value":null},{"color":"#d32f2f","value":1}]},
+          "color": {"mode":"thresholds"},
+          "mappings": [{"type":"value","options":{"0":{"text":"None","color":"#388e3c"}}}]
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"enrichment_dlq_depth","legendFormat":"DLQ","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 5, "title": "Queue Depth", "type": "stat",
+      "gridPos": {"x":16,"y":2,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode":"absolute","steps":[{"color":"#388e3c","value":null},{"color":"#f57c00","value":5},{"color":"#d32f2f","value":20}]},
+          "color": {"mode":"thresholds"}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"area"},
+      "targets": [{"expr":"enrichment_queue_depth","legendFormat":"Queue","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 6, "title": "Worker Uptime", "type": "stat",
+      "gridPos": {"x":20,"y":2,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "color": {"mode":"fixed","fixedColor":"#388e3c"},
+          "thresholds": {"mode":"absolute","steps":[{"color":"#388e3c","value":null}]}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"time() - process_start_time_seconds{job=\"enrichment-worker\"}","legendFormat":"Uptime","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 7, "title": "Alerts Processed / min", "type": "timeseries",
+      "gridPos": {"x":0,"y":6,"w":14,"h":9},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"lineWidth":2,"fillOpacity":10,"gradientMode":"none","spanNulls":false},
+          "color": {"mode":"palette-classic"}
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CRITICAL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#F2495C",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "HIGH"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#FF9830",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MEDIUM"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#FADE2A",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "LOW"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#73BF69",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "INFO"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#5794F2",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
+          {"matcher":{"id":"byName","options":"CRITICAL"},"properties":[{"id":"color","value":{"fixedColor":"#d32f2f","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"HIGH"},"properties":[{"id":"color","value":{"fixedColor":"#f57c00","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"MEDIUM"},"properties":[{"id":"color","value":{"fixedColor":"#fbc02d","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"LOW"},"properties":[{"id":"color","value":{"fixedColor":"#388e3c","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"INFO"},"properties":[{"id":"color","value":{"fixedColor":"#1976d2","mode":"fixed"}}]}
+        ]
+      },
+      "options": {
+        "legend": {"displayMode":"table","placement":"bottom","calcs":["mean","max","last"]},
+        "tooltip": {"mode":"multi"}
+      },
+      "targets": [
+        {"expr":"sum by (risk_level) (rate(enrichment_alerts_processed_total[2m])) * 60","legendFormat":"{{risk_level}}","refId":"A"}
+      ]
+    },
+
+    {
+      "id": 8, "title": "Risk Level Breakdown", "type": "piechart",
+      "gridPos": {"x":14,"y":6,"w":10,"h":9},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {"unit":"short"},
+        "overrides": [
+          {"matcher":{"id":"byName","options":"CRITICAL"},"properties":[{"id":"color","value":{"fixedColor":"#d32f2f","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"HIGH"},"properties":[{"id":"color","value":{"fixedColor":"#f57c00","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"MEDIUM"},"properties":[{"id":"color","value":{"fixedColor":"#fbc02d","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"LOW"},"properties":[{"id":"color","value":{"fixedColor":"#388e3c","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"INFO"},"properties":[{"id":"color","value":{"fixedColor":"#1976d2","mode":"fixed"}}]}
         ]
       },
       "options": {
         "pieType": "donut",
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "tooltip": {
-          "mode": "single"
-        }
+        "legend": {"displayMode":"table","placement":"right","values":["value","percent"]},
+        "tooltip": {"mode":"single"}
       },
-      "targets": [
-        {
-          "expr": "sum by (risk_level) (enrichment_alerts_processed_total)",
-          "legendFormat": "{{risk_level}}",
-          "refId": "A",
-          "instant": true
-        }
-      ]
+      "targets": [{"expr":"sum by (risk_level) (enrichment_alerts_processed_total)","legendFormat":"{{risk_level}}","refId":"A","instant":true}]
     },
+
     {
-      "id": 3,
-      "title": "API Response Times per Provider (p50)",
-      "description": "Enrichment API latency per provider in seconds",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 0,
-        "y": 8,
-        "w": 16,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
+      "id": 9, "title": "Queue Depth & DLQ Over Time", "type": "timeseries",
+      "gridPos": {"x":0,"y":15,"w":12,"h":8},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
       "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 8
-          }
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.5\", provider=\"virustotal\"}",
-          "legendFormat": "VirusTotal",
-          "refId": "A"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.5\", provider=\"abuseipdb\"}",
-          "legendFormat": "AbuseIPDB",
-          "refId": "B"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.5\", provider=\"otx\"}",
-          "legendFormat": "AlienVault OTX",
-          "refId": "C"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "title": "Queue Depth",
-      "description": "Alerts waiting in the Redis queue",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 16,
-        "y": 8,
-        "w": 8,
-        "h": 8
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 20
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          }
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        }
-      },
-      "targets": [
-        {
-          "expr": "enrichment_queue_depth",
-          "legendFormat": "Queue",
-          "refId": "A"
-        },
-        {
-          "expr": "enrichment_dlq_depth",
-          "legendFormat": "Dead-Letter Queue",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "Failed Alerts (DLQ)",
-      "description": "Alerts that failed processing and were moved to the dead-letter queue",
-      "type": "stat",
-      "gridPos": {
-        "x": 0,
-        "y": 16,
-        "w": 6,
-        "h": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "None",
-                  "color": "green"
-                }
-              }
-            }
-          ]
-        }
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "orientation": "auto",
-        "textMode": "auto",
-        "colorMode": "background"
-      },
-      "targets": [
-        {
-          "expr": "enrichment_dlq_depth",
-          "legendFormat": "DLQ Depth",
-          "refId": "A",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "id": 6,
-      "title": "CRITICAL Alerts (last 1h)",
-      "description": "Number of CRITICAL risk alerts detected \u2014 triggers Slack alert",
-      "type": "stat",
-      "gridPos": {
-        "x": 6,
-        "y": 16,
-        "w": 6,
-        "h": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          }
-        }
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "sum"
-          ]
-        },
-        "colorMode": "background",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "expr": "increase(enrichment_alerts_processed_total{risk_level=\"CRITICAL\"}[1h])",
-          "legendFormat": "CRITICAL",
-          "refId": "A",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "title": "Total Alerts Processed",
-      "type": "stat",
-      "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 6,
-        "h": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          }
-        }
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background"
-      },
-      "targets": [
-        {
-          "expr": "sum(enrichment_alerts_processed_total)",
-          "legendFormat": "Total",
-          "refId": "A",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "id": 8,
-      "title": "API Error Rate",
-      "type": "stat",
-      "gridPos": {
-        "x": 18,
-        "y": 16,
-        "w": 6,
-        "h": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 5
-              }
-            ]
-          },
-          "color": {
-            "mode": "thresholds"
-          }
-        }
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "sum"
-          ]
-        },
-        "colorMode": "background"
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(enrichment_api_errors_total[1h]))",
-          "legendFormat": "API Errors (1h)",
-          "refId": "A",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "title": "Jira Resolved",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 100
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "green",
-            "mode": "fixed"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "expr": "jira_tickets_resolved",
-          "legendFormat": "Resolved",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 10,
-      "title": "Jira In Progress",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 100
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "fixedColor": "orange",
-            "mode": "fixed"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": 0
-              }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "expr": "jira_tickets_in_progress",
-          "legendFormat": "In Progress",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 11,
-      "title": "Jira Tickets Over Time (Resolved vs In Progress)",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 104
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "lineWidth": 2
-          }
-        },
+        "defaults": {"unit":"short","custom":{"lineWidth":2,"fillOpacity":12}},
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Resolved"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "In Progress"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
+          {"matcher":{"id":"byName","options":"Queue"},"properties":[{"id":"color","value":{"fixedColor":"#1976d2","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"Dead-Letter Queue"},"properties":[{"id":"color","value":{"fixedColor":"#d32f2f","mode":"fixed"}}]}
         ]
       },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi"}},
       "targets": [
-        {
-          "expr": "jira_tickets_resolved",
-          "legendFormat": "Resolved",
-          "refId": "A"
-        },
-        {
-          "expr": "jira_tickets_in_progress",
-          "legendFormat": "In Progress",
-          "refId": "B"
-        }
+        {"expr":"enrichment_queue_depth","legendFormat":"Queue","refId":"A"},
+        {"expr":"enrichment_dlq_depth","legendFormat":"Dead-Letter Queue","refId":"B"}
       ]
     },
+
     {
-      "id": 12,
-      "title": "API Response Times per Provider (p50 / p90 / p99)",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 104
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
+      "id": 10, "title": "API Response Times — p50 / p90 / p99", "type": "timeseries",
+      "gridPos": {"x":12,"y":15,"w":12,"h":8},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {"unit":"s","custom":{"lineWidth":2,"fillOpacity":6}}
       },
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "lineWidth": 2
-          },
-          "unit": "s"
-        }
+        "legend": {"displayMode":"table","placement":"bottom","calcs":["mean","max"]},
+        "tooltip": {"mode":"multi"}
       },
       "targets": [
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.5\", provider=\"virustotal\"}",
-          "legendFormat": "VirusTotal p50",
-          "refId": "A"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.5\", provider=\"abuseipdb\"}",
-          "legendFormat": "AbuseIPDB p50",
-          "refId": "B"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.5\", provider=\"otx\"}",
-          "legendFormat": "AlienVault OTX p50",
-          "refId": "C"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.9\", provider=\"virustotal\"}",
-          "legendFormat": "VirusTotal p90",
-          "refId": "D"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.9\", provider=\"abuseipdb\"}",
-          "legendFormat": "AbuseIPDB p90",
-          "refId": "E"
-        },
-        {
-          "expr": "enrichment_api_latency_seconds{quantile=\"0.9\", provider=\"otx\"}",
-          "legendFormat": "AlienVault OTX p90",
-          "refId": "F"
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.5\",provider=\"virustotal\"}","legendFormat":"VT p50","refId":"A"},
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.9\",provider=\"virustotal\"}","legendFormat":"VT p90","refId":"B"},
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.99\",provider=\"virustotal\"}","legendFormat":"VT p99","refId":"C"},
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.5\",provider=\"abuseipdb\"}","legendFormat":"AbuseIPDB p50","refId":"D"},
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.9\",provider=\"abuseipdb\"}","legendFormat":"AbuseIPDB p90","refId":"E"},
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.5\",provider=\"otx\"}","legendFormat":"OTX p50","refId":"F"},
+        {"expr":"enrichment_api_latency_seconds{quantile=\"0.9\",provider=\"otx\"}","legendFormat":"OTX p90","refId":"G"}
+      ]
+    },
+
+    {
+      "id": 11, "title": "Alert Processing Duration (p50 / p90 / p99)", "type": "timeseries",
+      "gridPos": {"x":0,"y":23,"w":12,"h":7},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {"unit":"s","custom":{"lineWidth":2,"fillOpacity":8}},
+        "overrides": [
+          {"matcher":{"id":"byName","options":"p50"},"properties":[{"id":"color","value":{"fixedColor":"#1976d2","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"p90"},"properties":[{"id":"color","value":{"fixedColor":"#f57c00","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"p99"},"properties":[{"id":"color","value":{"fixedColor":"#d32f2f","mode":"fixed"}}]}
+        ]
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi"}},
+      "targets": [
+        {"expr":"enrichment_processing_duration_seconds{quantile=\"0.5\"}","legendFormat":"p50","refId":"A"},
+        {"expr":"enrichment_processing_duration_seconds{quantile=\"0.9\"}","legendFormat":"p90","refId":"B"},
+        {"expr":"enrichment_processing_duration_seconds{quantile=\"0.99\"}","legendFormat":"p99","refId":"C"}
+      ]
+    },
+
+    {
+      "id": 12, "title": "Failed Alerts Over Time", "type": "timeseries",
+      "gridPos": {"x":12,"y":23,"w":12,"h":7},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"lineWidth":2,"fillOpacity":15},
+          "color": {"mode":"fixed","fixedColor":"#d32f2f"}
         }
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"single"}},
+      "targets": [{"expr":"increase(enrichment_alerts_failed_total[5m])","legendFormat":"Failures (5m)","refId":"A"}]
+    },
+
+    {
+      "id": 13, "title": "Worker CPU Usage", "type": "timeseries",
+      "gridPos": {"x":0,"y":30,"w":8,"h":6},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {"lineWidth":2,"fillOpacity":10},
+          "color": {"mode":"fixed","fixedColor":"#388e3c"},
+          "max": 1
+        }
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"single"}},
+      "targets": [{"expr":"rate(process_cpu_seconds_total{job=\"enrichment-worker\"}[1m])","legendFormat":"CPU %","refId":"A"}]
+    },
+
+    {
+      "id": 14, "title": "Worker Memory (RSS)", "type": "timeseries",
+      "gridPos": {"x":8,"y":30,"w":8,"h":6},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {"lineWidth":2,"fillOpacity":10},
+          "color": {"mode":"fixed","fixedColor":"#1976d2"}
+        }
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"single"}},
+      "targets": [{"expr":"process_resident_memory_bytes{job=\"enrichment-worker\"}","legendFormat":"RSS Memory","refId":"A"}]
+    },
+
+    {
+      "id": 15, "title": "Open File Descriptors", "type": "timeseries",
+      "gridPos": {"x":16,"y":30,"w":8,"h":6},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {"lineWidth":2,"fillOpacity":8},
+          "color": {"mode":"fixed","fixedColor":"#f57c00"}
+        }
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"single"}},
+      "targets": [
+        {"expr":"process_open_fds{job=\"enrichment-worker\"}","legendFormat":"Open FDs","refId":"A"},
+        {"expr":"process_max_fds{job=\"enrichment-worker\"}","legendFormat":"Max FDs","refId":"B"}
+      ]
+    },
+
+    {
+      "id": 16, "title": "Jira — Resolved", "type": "stat",
+      "gridPos": {"x":0,"y":36,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"fixedColor":"#388e3c","mode":"fixed"},
+          "thresholds": {"mode":"absolute","steps":[{"color":"#388e3c","value":0}]}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"jira_tickets_resolved","legendFormat":"Resolved","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 17, "title": "Jira — In Progress", "type": "stat",
+      "gridPos": {"x":4,"y":36,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"fixedColor":"#f57c00","mode":"fixed"},
+          "thresholds": {"mode":"absolute","steps":[{"color":"#f57c00","value":0}]}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"jira_tickets_in_progress","legendFormat":"In Progress","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 18, "title": "Jira — Open", "type": "stat",
+      "gridPos": {"x":8,"y":36,"w":4,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"fixedColor":"#1976d2","mode":"fixed"},
+          "thresholds": {"mode":"absolute","steps":[{"color":"#1976d2","value":0}]}
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"none"},
+      "targets": [{"expr":"jira_tickets_open","legendFormat":"Open","refId":"A","instant":true}]
+    },
+
+    {
+      "id": 19, "title": "Jira Ticket Trend", "type": "timeseries",
+      "gridPos": {"x":12,"y":36,"w":12,"h":8},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {"custom":{"lineWidth":2}},
+        "overrides": [
+          {"matcher":{"id":"byName","options":"Resolved"},"properties":[{"id":"color","value":{"fixedColor":"#388e3c","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"In Progress"},"properties":[{"id":"color","value":{"fixedColor":"#f57c00","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"Open"},"properties":[{"id":"color","value":{"fixedColor":"#1976d2","mode":"fixed"}}]}
+        ]
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi"}},
+      "targets": [
+        {"expr":"jira_tickets_resolved","legendFormat":"Resolved","refId":"A"},
+        {"expr":"jira_tickets_in_progress","legendFormat":"In Progress","refId":"B"},
+        {"expr":"jira_tickets_open","legendFormat":"Open","refId":"C"}
+      ]
+    },
+
+    {
+      "id": 20, "title": "Cumulative Alerts by Risk Level", "type": "timeseries",
+      "gridPos": {"x":0,"y":40,"w":12,"h":7},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {"unit":"short","custom":{"lineWidth":2,"fillOpacity":8}},
+        "overrides": [
+          {"matcher":{"id":"byName","options":"CRITICAL"},"properties":[{"id":"color","value":{"fixedColor":"#d32f2f","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"HIGH"},"properties":[{"id":"color","value":{"fixedColor":"#f57c00","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"MEDIUM"},"properties":[{"id":"color","value":{"fixedColor":"#fbc02d","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"LOW"},"properties":[{"id":"color","value":{"fixedColor":"#388e3c","mode":"fixed"}}]},
+          {"matcher":{"id":"byName","options":"INFO"},"properties":[{"id":"color","value":{"fixedColor":"#1976d2","mode":"fixed"}}]}
+        ]
+      },
+      "options": {"legend":{"displayMode":"list","placement":"bottom"},"tooltip":{"mode":"multi"}},
+      "targets": [{"expr":"sum by (risk_level) (enrichment_alerts_processed_total)","legendFormat":"{{risk_level}}","refId":"A"}]
+    },
+
+    {
+      "id": 21, "title": "Scrape Target Health", "type": "stat",
+      "gridPos": {"x":12,"y":40,"w":12,"h":4},
+      "datasource": {"type":"prometheus","uid":"cfgwxsckc0t8gc"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode":"absolute","steps":[{"color":"#d32f2f","value":null},{"color":"#388e3c","value":1}]},
+          "color": {"mode":"thresholds"},
+          "mappings": [
+            {"type":"value","options":{"0":{"text":"DOWN","color":"#d32f2f"},"1":{"text":"UP","color":"#388e3c"}}}
+          ]
+        }
+      },
+      "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"background","graphMode":"none","orientation":"horizontal"},
+      "targets": [
+        {"expr":"up{job=\"enrichment-worker\"}","legendFormat":"Enrichment Worker","refId":"A","instant":true},
+        {"expr":"up{job=\"prometheus\"}","legendFormat":"Prometheus","refId":"B","instant":true},
+        {"expr":"up{job=\"redis\"}","legendFormat":"Redis","refId":"C","instant":true}
       ]
     }
-  ],
-  "alerting": {
-    "alerts": [
-      {
-        "uid": "critical-alert-wazuh",
-        "title": "CRITICAL IOC Alert Detected",
-        "condition": "A",
-        "data": [
-          {
-            "refId": "A",
-            "queryType": "",
-            "relativeTimeRange": {
-              "from": 300,
-              "to": 0
-            },
-            "datasourceUid": "prometheus",
-            "model": {
-              "expr": "increase(enrichment_alerts_processed_total{risk_level=\"CRITICAL\"}[5m])",
-              "instant": true,
-              "refId": "A"
-            }
-          }
-        ],
-        "intervalSeconds": 60,
-        "noDataState": "OK",
-        "execErrState": "Alerting",
-        "for": "0s",
-        "annotations": {
-          "summary": "CRITICAL risk IOC detected by enrichment pipeline",
-          "description": "A CRITICAL risk alert has been processed in the last 5 minutes. Immediate investigation required."
-        },
-        "labels": {
-          "severity": "critical",
-          "team": "security"
-        }
-      }
-    ]
-  }
+
+  ]
 }

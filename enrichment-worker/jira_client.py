@@ -3,6 +3,7 @@ import logging
 import requests
 from requests.auth import HTTPBasicAuth
 import threading
+import metrics
 import time
 
 logger = logging.getLogger("jira_client")
@@ -31,7 +32,6 @@ PRIORITY_MAP = {
     "LOW":      "Low"
 }
 
-# Rules that always create a Jira ticket regardless of risk level
 ALWAYS_TICKET_RULES = {"5715"}  # SSH authentication success
 
 def create_ticket(alert, risk, slack_permalink=None):
@@ -102,8 +102,8 @@ def poll_jira_status():
             headers=headers,
             auth=auth,
             params={
-                "jql":       f"project={JIRA_PROJECT_KEY}",
-                "fields":    "status",
+                "jql":        f"project={JIRA_PROJECT_KEY}",
+                "fields":     "status",
                 "maxResults": 1000
             },
             timeout=10
@@ -111,11 +111,14 @@ def poll_jira_status():
         resp.raise_for_status()
         issues = resp.json().get("issues", [])
 
-        todo = sum(1 for i in issues if i["fields"]["status"]["name"] == "To Do")
+        todo        = sum(1 for i in issues if i["fields"]["status"]["name"] == "To Do")
         in_progress = sum(1 for i in issues if i["fields"]["status"]["name"] == "In Progress")
-        done = sum(1 for i in issues if i["fields"]["status"]["name"] == "Done")
+        done        = sum(1 for i in issues if i["fields"]["status"]["name"] == "Done")
 
         logger.info("Jira poll: todo=%s in_progress=%s done=%s", todo, in_progress, done)
+        metrics.set_gauge("jira_tickets_todo",        todo)
+        metrics.set_gauge("jira_tickets_in_progress", in_progress)
+        metrics.set_gauge("jira_tickets_resolved",    done)
         return {"todo": todo, "in_progress": in_progress, "done": done}
 
     except Exception as e:
